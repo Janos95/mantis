@@ -1,0 +1,28 @@
+name: CMake MacOS
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cmake -B build -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -S .
+      working-directory: ${{ github.workspace }}
+
+    - name: Build
+      run: cmake --build build --config Release
+      working-directory: ${{ github.workspace }}
+
+    - name: Test
+      run: ctest --build-config Release
+      working-directory: ${{ github.workspace }}/build
