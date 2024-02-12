@@ -9,9 +9,10 @@
 #error "Mantis: No SIMD support detected, platform not supported."
 #endif
 
-
 #ifdef MANTIS_USE_NEON
+
 #include <arm_neon.h>
+
 #endif
 
 #ifdef MANTIS_USE_AVX
@@ -105,6 +106,7 @@ struct LeafNode {
 // ============================= SIMD ===============================
 
 #ifdef MANTIS_USE_NEON
+
 // a*b + c
 float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
     return vmlaq_f32(c, a, b);
@@ -130,6 +132,10 @@ float32x4_t mul(float32x4_t a, float32x4_t b) {
     return vmulq_f32(a, b);
 }
 
+float32x4_t div(float32x4_t a, float32x4_t b) {
+    return vdivq_f32(a, b);
+}
+
 uint32x4_t leq(float32x4_t a, float32x4_t b) {
     return vcleq_f32(a, b);
 }
@@ -142,8 +148,12 @@ uint32x4_t logical_and(uint32x4_t a, uint32x4_t b) {
     return vandq_u32(a, b);
 }
 
-int32x4_t select(int32x4_t condition, int32x4_t trueValue, int32x4_t falseValue) {
+int32x4_t select_int(int32x4_t condition, int32x4_t trueValue, int32x4_t falseValue) {
     return vbslq_s32(condition, trueValue, falseValue);
+}
+
+float32x4_t select_float(uint32x4_t condition, float32x4_t trueValue, float32x4_t falseValue) {
+    return vbslq_f32(condition, trueValue, falseValue);
 }
 
 float32x4_t dup_float(float x) {
@@ -153,6 +163,7 @@ float32x4_t dup_float(float x) {
 int32x4_t dup_int(int32_t x) {
     return vdupq_n_s32(x);
 }
+
 #endif
 
 #ifdef MANTIS_USE_AVX
@@ -181,6 +192,10 @@ float32x4_t mul(float32x4_t a, float32x4_t b) {
     return _mm_mul_ps(a, b);
 }
 
+float32x4_t div(float32x4_t a, float32x4_t b) {
+    return _mm_div_ps(a, b);
+}
+
 uint32x4_t leq(float32x4_t a, float32x4_t b) {
     return _mm_castps_si128(_mm_cmple_ps(a, b)); // Cast result to integer type
 }
@@ -193,21 +208,46 @@ uint32x4_t logical_and(uint32x4_t a, uint32x4_t b) {
     return _mm_and_si128(a, b);
 }
 
-int32x4_t select(int32x4_t condition, int32x4_t trueValue, int32x4_t falseValue) {
-    return _mm_blendv_epi8(falseValue, trueValue, condition); // Blend values based on condition
+int32x4_t select_int(int32x4_t condition, int32x4_t trueValue, int32x4_t falseValue) {
+    return _mm_blendv_epi8(falseValue, trueValue, condition);
+}
+
+float32x4_t select_float(uint32x4_t condition, float32x4_t trueValue, float32x4_t falseValue) {
+    __m128 conditionAsFloat = _mm_castsi128_ps(condition);
+    return _mm_blendv_ps(falseValue, trueValue, conditionAsFloat);
 }
 
 float32x4_t dup_float(float x) {
-    return _mm_set1_ps(x); // Duplicate float value across all elements
+    return _mm_set1_ps(x);
 }
 
 int32x4_t dup_int(int32_t x) {
-    return _mm_set1_epi32(x); // Duplicate int value across all elements
+    return _mm_set1_epi32(x);
 }
 
 #endif
 
 // ============================= SIMD MATH UTILS ===============================
+
+void set(float32x4_t &v, size_t i, float x) {
+    auto ptr = (float *) &v;
+    ptr[i] = x;
+}
+
+void set(int32x4_t &v, size_t i, int x) {
+    auto ptr = (int *) &v;
+    ptr[i] = x;
+}
+
+float get(const float32x4_t &v, size_t i) {
+    auto ptr = (const float *) &v;
+    return ptr[i];
+}
+
+int get(const int32x4_t &v, size_t i) {
+    auto ptr = (const int *) &v;
+    return ptr[i];
+}
 
 float32x4_t dot(float32x4_t ax, float32x4_t ay, float32x4_t az,
                 float32x4_t bx, float32x4_t by, float32x4_t bz) {
@@ -301,14 +341,14 @@ public:
             minDist = min(minDist, distSq);
 
             // Update the indices
-            minIdx = select(keepMinDist, minIdx, leaf.indices);
+            minIdx = select_int(keepMinDist, minIdx, leaf.indices);
         }
 
         // Find overall minimum distance and index
         for (int j = 0; j < 4; ++j) {
-            if (minDist[j] < bestDistSq) {
-                bestDistSq = minDist[j];
-                bestIdx = minIdx[j];
+            if (get(minDist, j) < bestDistSq) {
+                bestDistSq = get(minDist, j);
+                bestIdx = get(minIdx, j);
             }
         }
     }
@@ -375,8 +415,8 @@ public:
 
             // push children that are internal
             for (int idx: childIndices) {
-                int childIdx = node.children[idx];
-                float childDist = distances[idx];
+                int childIdx = get(node.children, idx);
+                float childDist = get(distances, idx);
                 if (childDist < bestDistSq) {
                     assert(stackSize + 1 < MAX_STACK_SIZE);
                     stack[stackSize++] = {childIdx, childDist};
@@ -413,10 +453,10 @@ private:
                 for (size_t j = 0; j < 4; ++j) {
                     size_t k = i * 4 + j;
                     if (k < end - begin) {
-                        leaf.x_coords[j] = (float) original_points[indices[begin + k]].x;
-                        leaf.y_coords[j] = (float) original_points[indices[begin + k]].y;
-                        leaf.z_coords[j] = (float) original_points[indices[begin + k]].z;
-                        leaf.indices[j] = (int) (indices[begin + k]);
+                        set(leaf.x_coords, j, (float) original_points[indices[begin + k]].x);
+                        set(leaf.y_coords, j, (float) original_points[indices[begin + k]].y);
+                        set(leaf.z_coords, j, (float) original_points[indices[begin + k]].z);
+                        set(leaf.indices, j, (int) indices[begin + k]);
                     }
                 }
                 m_leaves.push_back(leaf);
@@ -700,7 +740,7 @@ Impl::Impl(const std::vector<GEO::vec3> &points, const std::vector<std::array<in
     }();
     (void) init_geogram;
 
-    std::map<std::pair<index_t, index_t>, EdgeData> edge_map;
+    std::map < std::pair<index_t, index_t>, EdgeData > edge_map;
     for (index_t f = 0; f < triangles.size(); ++f) {
         auto t = triangles[f];
         for (int i = 0; i < 3; ++i) {
@@ -852,7 +892,7 @@ void Impl::compute_interception_list() {
             return distance_to_plane_squared(p, plane);
         };
 
-        std::unordered_set<index_t> visited = {triangles[f][0], triangles[f][1], triangles[f][2]};
+        std::unordered_set < index_t > visited = {triangles[f][0], triangles[f][1], triangles[f][2]};
         std::queue<index_t> queue;
         queue.push(triangles[f][0]);
         queue.push(triangles[f][1]);
@@ -905,7 +945,7 @@ void Impl::compute_interception_list() {
             return distance_to_line_squared(p, l0, l1);
         };
 
-        std::unordered_set<index_t> visited = {edges[e].start, edges[e].end};
+        std::unordered_set < index_t > visited = {edges[e].start, edges[e].end};
         std::queue<index_t> queue;
         queue.push(edges[e].start);
         queue.push(edges[e].end);
@@ -1000,23 +1040,23 @@ void Impl::compute_interception_list() {
             for (size_t j = 0; j < 4; ++j) {
                 if (i * 4 + j < intercepted_edges[v].size()) {
                     index_t e = intercepted_edges[v][i * 4 + j];
-                    packed.min_x[j] = (float) intercepted_edges_bb[v][i * 4 + j].lower.x;
+                    set(packed.min_x, j, (float) intercepted_edges_bb[v][i * 4 + j].lower.x);
                     for (size_t d = 0; d < 3; ++d) {
-                        packed.start[d][j] = (float) points[edges[e].start][d];
-                        packed.dir[d][j] = float(points[edges[e].end][d] - points[edges[e].start][d]);
+                        set(packed.start[d], j, (float) points[edges[e].start][d]);
+                        set(packed.dir[d], j, float(points[edges[e].end][d] - points[edges[e].start][d]));
                     }
-                    packed.dir_len_squared[j] = float(GEO::distance2(points[edges[e].end], points[edges[e].start]));
-                    packed.primitive_idx[j] = int(e + nb_points);
+                    set(packed.dir_len_squared, j, float(GEO::distance2(points[edges[e].end], points[edges[e].start])));
+                    set(packed.primitive_idx, j, int(e + nb_points));
                 } else {
                     // duplicate last edge
                     assert(j > 0);
-                    packed.min_x[j] = packed.min_x[j - 1];
+                    set(packed.min_x, j, get(packed.min_x, j - 1));
                     for (size_t d = 0; d < 3; ++d) {
-                        packed.start[d][j] = packed.start[d][j - 1];
-                        packed.dir[d][j] = packed.dir[d][j - 1];
+                        set(packed.start[d], j, get(packed.start[d], j - 1));
+                        set(packed.dir[d], j, get(packed.dir[d], j - 1));
                     }
-                    packed.dir_len_squared[j] = packed.dir_len_squared[j - 1];
-                    packed.primitive_idx[j] = packed.primitive_idx[j - 1];
+                    set(packed.dir_len_squared, j, get(packed.dir_len_squared, j - 1));
+                    set(packed.primitive_idx, j, get(packed.primitive_idx, j - 1));
                 }
             }
             intercepted_edges_packed[v][i] = packed;
@@ -1048,23 +1088,23 @@ void Impl::compute_interception_list() {
             for (size_t j = 0; j < 4; ++j) {
                 if (i * 4 + j < intercepted_faces[v].size()) {
                     index_t f = intercepted_faces[v][i * 4 + j];
-                    packed.min_x[j] = (float) intercepted_faces_bb[v][i * 4 + j].lower.x;
+                    set(packed.min_x, j, (float) intercepted_faces_bb[v][i * 4 + j].lower.x);
                     for (size_t d = 0; d < 4; ++d) {
-                        packed.face_plane[d][j] = (float) faces[f].face_plane[d];
-                        packed.edge_plane0[d][j] = (float) faces[f].clipping_planes[0][d];
-                        packed.edge_plane1[d][j] = (float) faces[f].clipping_planes[1][d];
-                        packed.edge_plane2[d][j] = (float) faces[f].clipping_planes[2][d];
+                        set(packed.face_plane[d], j, (float) faces[f].face_plane[d]);
+                        set(packed.edge_plane0[d], j, (float) faces[f].clipping_planes[0][d]);
+                        set(packed.edge_plane1[d], j, (float) faces[f].clipping_planes[1][d]);
+                        set(packed.edge_plane2[d], j, (float) faces[f].clipping_planes[2][d]);
                     }
                     packed.primitive_idx[j] = int(f + nb_points + nb_edges);
                 } else {
                     // duplicate last face
                     assert(j > 0);
-                    packed.min_x[j] = packed.min_x[j - 1];
+                    set(packed.min_x, j, get(packed.min_x, j - 1));
                     for (size_t d = 0; d < 4; ++d) {
-                        packed.face_plane[d][j] = packed.face_plane[d][j - 1];
-                        packed.edge_plane0[d][j] = packed.edge_plane0[d][j - 1];
-                        packed.edge_plane1[d][j] = packed.edge_plane1[d][j - 1];
-                        packed.edge_plane2[d][j] = packed.edge_plane2[d][j - 1];
+                        set(packed.face_plane[d], j, get(packed.face_plane[d], j - 1));
+                        set(packed.edge_plane0[d], j, get(packed.edge_plane0[d], j - 1));
+                        set(packed.edge_plane1[d], j, get(packed.edge_plane1[d], j - 1));
+                        set(packed.edge_plane2[d], j, get(packed.edge_plane2[d], j - 1));
                     }
                 }
             }
@@ -1085,7 +1125,7 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
 
     const auto &v_edges = intercepted_edges_packed[v];
     for (const PackedEdge &pack: v_edges) {
-        if (q.x < pack.min_x[0]) {
+        if (q.x < get(pack.min_x, 0)) {
             break;
         }
 
@@ -1093,7 +1133,7 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
         float32x4_t apy = sub(qy, pack.start[1]);
         float32x4_t apz = sub(qz, pack.start[2]);
 
-        float32x4_t t = dot(apx, apy, apz, pack.dir[0], pack.dir[1], pack.dir[2]) / pack.dir_len_squared;
+        float32x4_t t = div(dot(apx, apy, apz, pack.dir[0], pack.dir[1], pack.dir[2]), pack.dir_len_squared);
 
         // the result is only valid if t is in [0, 1]
         uint32x4_t mask = logical_and(leq(dup_float(0.0f), t), leq(t, dup_float(1.0f)));
@@ -1106,13 +1146,13 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
         float32x4_t d2_line = distance_squared(qx, qy, qz, projectedx, projectedy, projectedz);
 
         mask = logical_and(mask, leq(d2_line, best_d2));
-        best_d2 = select(mask, d2_line, best_d2);
-        best_idx = select(mask, pack.primitive_idx, best_idx);
+        best_d2 = select_float(mask, d2_line, best_d2);
+        best_idx = select_int(mask, pack.primitive_idx, best_idx);
     }
 
     const auto &v_faces = intercepted_faces_packed[v];
     for (const PackedFace &pack: v_faces) {
-        if (q.x < pack.min_x[0]) {
+        if (q.x < get(pack.min_x, 0)) {
             break;
         }
 
@@ -1132,17 +1172,17 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
         d2 = d2 * d2;
 
         mask = logical_and(mask, leq(d2, best_d2));
-        best_d2 = select(mask, d2, best_d2);
-        best_idx = select(mask, pack.primitive_idx, best_idx);
+        best_d2 = select_float(mask, d2, best_d2);
+        best_idx = select_int(mask, pack.primitive_idx, best_idx);
     }
 
-    Result result{best_d2[0], best_idx[0]};
+    Result result{get(best_d2, 0), get(best_idx, 0)};
 
     // Find overall minimum distance and index
     for (int j = 1; j < 4; ++j) {
-        if (best_d2[j] < result.distance_squared) {
-            result.distance_squared = best_d2[j];
-            result.primitive_index = best_idx[j];
+        if (get(best_d2, j) < result.distance_squared) {
+            result.distance_squared = get(best_d2, j);
+            result.primitive_index = get(best_idx, j);
         }
     }
 

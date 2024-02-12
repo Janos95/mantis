@@ -1,11 +1,4 @@
 FetchContent_Declare(
-        doctest
-        GIT_REPOSITORY https://github.com/doctest/doctest
-)
-
-FetchContent_MakeAvailable(doctest)
-
-FetchContent_Declare(
         eigen
         GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
 )
@@ -30,7 +23,7 @@ target_include_directories(P2M PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/P2M")
 
 add_executable(tests tests.cpp)
 
-target_link_libraries(tests PRIVATE doctest::doctest mantis P2M)
+target_link_libraries(tests PRIVATE mantis P2M)
 target_compile_definitions(tests PRIVATE ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/")
 
 add_test(NAME tests COMMAND tests)
