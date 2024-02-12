@@ -6,8 +6,9 @@
 #elif defined(__AVX__)
 #define MANTIS_USE_AVX
 #else
-#pragma error("No SIMD support detected. Mantis will run in scalar mode.")
+#error "Mantis: No SIMD support detected, platform not supported."
 #endif
+
 
 #ifdef MANTIS_USE_NEON
 #include <arm_neon.h>
