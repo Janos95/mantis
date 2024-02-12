@@ -295,8 +295,8 @@ inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x
 
 // ============================= BVH ===============================
 
-#define cmin(a, b) distances[a] > distances[b] ? b : a
-#define cmax(a, b) distances[a] > distances[b] ? a : b
+#define cmin(a, b) get(distances,a) > get(distances,b) ? b : a
+#define cmax(a, b) get(distances,a) > get(distances,b) ? a : b
 
 #define cswap(a, b)  \
     {int tmp = a;    \
@@ -501,16 +501,16 @@ private:
         auto node_idx = int(m_nodes.size());
         m_nodes.emplace_back();
 
-        node.children[0] = constructTree(indices, begin, secondarySplit1, depth + 2, childBoxes[0]);
-        node.children[1] = constructTree(indices, secondarySplit1, primarySplit, depth + 2, childBoxes[1]);
-        node.children[2] = constructTree(indices, primarySplit, secondarySplit2, depth + 2, childBoxes[2]);
-        node.children[3] = constructTree(indices, secondarySplit2, end, depth + 2, childBoxes[3]);
+        set(node.children, 0, constructTree(indices, begin, secondarySplit1, depth + 2, childBoxes[0]));
+        set(node.children, 1, constructTree(indices, secondarySplit1, primarySplit, depth + 2, childBoxes[1]));
+        set(node.children, 2, constructTree(indices, primarySplit, secondarySplit2, depth + 2, childBoxes[2]));
+        set(node.children, 3, constructTree(indices, secondarySplit2, end, depth + 2, childBoxes[3]));
 
         // set bounding boxes of node
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 4; ++j) {
-                node.minCorners[i][j] = (float) childBoxes[j].lower[i];
-                node.maxCorners[i][j] = (float) childBoxes[j].upper[i];
+                set(node.minCorners[i], j, (float) childBoxes[j].lower[i]);
+                set(node.maxCorners[i], j, (float) childBoxes[j].upper[i]);
             }
         }
 
@@ -1095,7 +1095,7 @@ void Impl::compute_interception_list() {
                         set(packed.edge_plane1[d], j, (float) faces[f].clipping_planes[1][d]);
                         set(packed.edge_plane2[d], j, (float) faces[f].clipping_planes[2][d]);
                     }
-                    packed.primitive_idx[j] = int(f + nb_points + nb_edges);
+                    set(packed.primitive_idx, j, int(f + nb_points + nb_edges));
                 } else {
                     // duplicate last face
                     assert(j > 0);
@@ -1169,7 +1169,7 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
 
         float32x4_t d2 = eval_plane(qx, qy, qz, pack.face_plane[0], pack.face_plane[1], pack.face_plane[2],
                                     pack.face_plane[3]);
-        d2 = d2 * d2;
+        d2 = mul(d2, d2);
 
         mask = logical_and(mask, leq(d2, best_d2));
         best_d2 = select_float(mask, d2, best_d2);
