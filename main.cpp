@@ -4,7 +4,6 @@
 
 #include <random>
 
-
 void load_obj(const std::string &path,
               std::vector<GEO::vec3> &points,
               std::vector<std::array<uint32_t, 3>> &triangles) {

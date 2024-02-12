@@ -210,10 +210,7 @@ void run_test_case(const std::string& name, size_t num_samples, double eps) {
     load_obj(path, points, triangles);
     mantis::AccelerationStructure accelerator(points, triangles, limit_cube_len);
     auto model = build_p2m(points, triangles);
-    bool passed = check_random_samples(accelerator, model, num_samples, eps);
-    if(passed) {
-        printf("%s passed\n", name.c_str());
-    }
+    check_random_samples(accelerator, model, num_samples, eps);
 }
 
 

@@ -1,7 +1,21 @@
 #include "mantis.h"
 #include "Delaunay_psm.h"
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#define MANTIS_USE_NEON
+#elif defined(__AVX__)
+#define MANTIS_USE_AVX
+#else
+#pragma error("No SIMD support detected. Mantis will run in scalar mode.")
+#endif
+
+#ifdef MANTIS_USE_NEON
 #include <arm_neon.h>
+#endif
+
+#ifdef MANTIS_USE_AVX
+#include <immintrin.h>
+#endif
 
 #include <queue>
 #include <unordered_set>
@@ -10,6 +24,12 @@
 #include <thread>
 
 //#define DEBUG_MANTIS
+
+#ifdef MANTIS_USE_AVX
+using float32x4_t = __m128;
+using int32x4_t = __m128i;
+using uint32x4_t = __m128i;
+#endif
 
 namespace mantis {
 
@@ -83,6 +103,7 @@ struct LeafNode {
 
 // ============================= SIMD ===============================
 
+#ifdef MANTIS_USE_NEON
 // a*b + c
 float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
     return vmlaq_f32(c, a, b);
@@ -92,8 +113,28 @@ float32x4_t min(float32x4_t a, float32x4_t b) {
     return vminq_f32(a, b);
 }
 
+float32x4_t max(float32x4_t a, float32x4_t b) {
+    return vmaxq_f32(a, b);
+}
+
+float32x4_t sub(float32x4_t a, float32x4_t b) {
+    return vsubq_f32(a, b);
+}
+
+float32x4_t add(float32x4_t a, float32x4_t b) {
+    return vaddq_f32(a, b);
+}
+
+float32x4_t mul(float32x4_t a, float32x4_t b) {
+    return vmulq_f32(a, b);
+}
+
 uint32x4_t leq(float32x4_t a, float32x4_t b) {
     return vcleq_f32(a, b);
+}
+
+uint32x4_t geq(float32x4_t a, float32x4_t b) {
+    return vcgeq_f32(a, b);
 }
 
 uint32x4_t logical_and(uint32x4_t a, uint32x4_t b) {
@@ -111,17 +152,72 @@ float32x4_t dup_float(float x) {
 int32x4_t dup_int(int32_t x) {
     return vdupq_n_s32(x);
 }
+#endif
+
+#ifdef MANTIS_USE_AVX
+
+float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
+    return _mm_add_ps(_mm_mul_ps(a, b), c); // TODO: check for fma
+}
+
+float32x4_t min(float32x4_t a, float32x4_t b) {
+    return _mm_min_ps(a, b);
+}
+
+float32x4_t max(float32x4_t a, float32x4_t b) {
+    return _mm_max_ps(a, b);
+}
+
+float32x4_t sub(float32x4_t a, float32x4_t b) {
+    return _mm_sub_ps(a, b);
+}
+
+float32x4_t add(float32x4_t a, float32x4_t b) {
+    return _mm_add_ps(a, b);
+}
+
+float32x4_t mul(float32x4_t a, float32x4_t b) {
+    return _mm_mul_ps(a, b);
+}
+
+uint32x4_t leq(float32x4_t a, float32x4_t b) {
+    return _mm_castps_si128(_mm_cmple_ps(a, b)); // Cast result to integer type
+}
+
+uint32x4_t geq(float32x4_t a, float32x4_t b) {
+    return _mm_castps_si128(_mm_cmpge_ps(a, b)); // Cast result to integer type
+}
+
+uint32x4_t logical_and(uint32x4_t a, uint32x4_t b) {
+    return _mm_and_si128(a, b);
+}
+
+int32x4_t select(int32x4_t condition, int32x4_t trueValue, int32x4_t falseValue) {
+    return _mm_blendv_epi8(falseValue, trueValue, condition); // Blend values based on condition
+}
+
+float32x4_t dup_float(float x) {
+    return _mm_set1_ps(x); // Duplicate float value across all elements
+}
+
+int32x4_t dup_int(int32_t x) {
+    return _mm_set1_epi32(x); // Duplicate int value across all elements
+}
+
+#endif
+
+// ============================= SIMD MATH UTILS ===============================
 
 float32x4_t dot(float32x4_t ax, float32x4_t ay, float32x4_t az,
                 float32x4_t bx, float32x4_t by, float32x4_t bz) {
-    float32x4_t result = vmulq_f32(ax, bx);
+    float32x4_t result = mul(ax, bx);
     result = fma(ay, by, result);
     result = fma(az, bz, result);
     return result;
 }
 
 float32x4_t length_squared(float32x4_t x, float32x4_t y, float32x4_t z) {
-    float32x4_t result = vmulq_f32(x, x);
+    float32x4_t result = mul(x, x);
     result = fma(y, y, result);
     result = fma(z, z, result);
     return result;
@@ -129,30 +225,30 @@ float32x4_t length_squared(float32x4_t x, float32x4_t y, float32x4_t z) {
 
 float32x4_t distance_squared(float32x4_t ax, float32x4_t ay, float32x4_t az,
                              float32x4_t bx, float32x4_t by, float32x4_t bz) {
-    float32x4_t dx = vsubq_f32(ax, bx);
-    float32x4_t dy = vsubq_f32(ay, by);
-    float32x4_t dz = vsubq_f32(az, bz);
+    float32x4_t dx = sub(ax, bx);
+    float32x4_t dy = sub(ay, by);
+    float32x4_t dz = sub(az, bz);
     return length_squared(dx, dy, dz);
 }
 
 float32x4_t eval_plane(float32x4_t px, float32x4_t py, float32x4_t pz, float32x4_t plane_x, float32x4_t plane_y,
                        float32x4_t plane_z, float32x4_t plane_w) {
-    float32x4_t result = vmulq_f32(px, plane_x);
+    float32x4_t result = mul(px, plane_x);
     result = fma(py, plane_y, result);
     result = fma(pz, plane_z, result);
-    return vaddq_f32(result, plane_w);
+    return add(result, plane_w);
 }
 
 inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x4_t qy, const float32x4_t qz) {
     // Compute distances in x, y, z directions and clamp them to zero if they are negative
-    float32x4_t dx = vmaxq_f32(vsubq_f32(node.minCorners[0], qx), vsubq_f32(qx, node.maxCorners[0]));
-    dx = vmaxq_f32(dx, vdupq_n_f32(0.0f));
-    float32x4_t dy = vmaxq_f32(vsubq_f32(node.minCorners[1], qy), vsubq_f32(qy, node.maxCorners[1]));
-    dy = vmaxq_f32(dy, vdupq_n_f32(0.0f));
-    float32x4_t dz = vmaxq_f32(vsubq_f32(node.minCorners[2], qz), vsubq_f32(qz, node.maxCorners[2]));
-    dz = vmaxq_f32(dz, vdupq_n_f32(0.0f));
+    float32x4_t dx = max(sub(node.minCorners[0], qx), sub(qx, node.maxCorners[0]));
+    dx = max(dx, dup_float(0.0f));
+    float32x4_t dy = max(sub(node.minCorners[1], qy), sub(qy, node.maxCorners[1]));
+    dy = max(dy, dup_float(0.0f));
+    float32x4_t dz = max(sub(node.minCorners[2], qz), sub(qz, node.maxCorners[2]));
+    dz = max(dz, vdupq_n_f32(0.0f));
     // Compute squared distances for each box
-    float32x4_t squaredDist = vaddq_f32(vmulq_f32(dx, dx), vaddq_f32(vmulq_f32(dy, dy), vmulq_f32(dz, dz)));
+    float32x4_t squaredDist = length_squared(dx, dy, dz);
     return squaredDist;
 }
 
@@ -187,24 +283,24 @@ public:
                             size_t numPackets,
                             float &bestDistSq,
                             int &bestIdx) const {
-        float32x4_t minDist = vdupq_n_f32(bestDistSq);
-        int32x4_t minIdx = vdupq_n_s32(bestIdx);
+        float32x4_t minDist = dup_float(bestDistSq);
+        int32x4_t minIdx = dup_int(bestIdx);
 
         for (size_t i = firstPacket; i < firstPacket + numPackets; ++i) {
             // Compute squared distances for a batch of 4 points
             const auto &leaf = m_leaves[i];
-            float32x4_t dx = vsubq_f32(pt_x, leaf.x_coords);
-            float32x4_t dy = vsubq_f32(pt_y, leaf.y_coords);
-            float32x4_t dz = vsubq_f32(pt_z, leaf.z_coords);
-            float32x4_t distSq = vmlaq_f32(vmlaq_f32(vmulq_f32(dx, dx), dy, dy), dz, dz);
+            float32x4_t dx = sub(pt_x, leaf.x_coords);
+            float32x4_t dy = sub(pt_y, leaf.y_coords);
+            float32x4_t dz = sub(pt_z, leaf.z_coords);
+            float32x4_t distSq = length_squared(dx, dy, dz);
 
             // Comparison mask for distances
             // if distSq >= minDist => keep minDist
-            uint32x4_t keepMinDist = vcgeq_f32(distSq, minDist);
-            minDist = vminq_f32(minDist, distSq);
+            uint32x4_t keepMinDist = geq(distSq, minDist);
+            minDist = min(minDist, distSq);
 
             // Update the indices
-            minIdx = vbslq_s32(keepMinDist, minIdx, leaf.indices);
+            minIdx = select(keepMinDist, minIdx, leaf.indices);
         }
 
         // Find overall minimum distance and index
@@ -246,9 +342,9 @@ public:
         int bestIdx = -1;
 
         // Broadcast query point coordinates to SIMD size
-        float32x4_t q_x = vdupq_n_f32(q.x);
-        float32x4_t q_y = vdupq_n_f32(q.y);
-        float32x4_t q_z = vdupq_n_f32(q.z);
+        float32x4_t q_x = dup_float(q.x);
+        float32x4_t q_y = dup_float(q.y);
+        float32x4_t q_z = dup_float(q.z);
 
         // Start with the root node
         stack[stackSize++] = {0, 0.0f};
@@ -992,9 +1088,9 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
             break;
         }
 
-        float32x4_t apx = qx - pack.start[0];
-        float32x4_t apy = qy - pack.start[1];
-        float32x4_t apz = qz - pack.start[2];
+        float32x4_t apx = sub(qx, pack.start[0]);
+        float32x4_t apy = sub(qy, pack.start[1]);
+        float32x4_t apz = sub(qz, pack.start[2]);
 
         float32x4_t t = dot(apx, apy, apz, pack.dir[0], pack.dir[1], pack.dir[2]) / pack.dir_len_squared;
 
