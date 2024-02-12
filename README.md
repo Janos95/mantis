@@ -29,7 +29,7 @@ to fetch and use with CMake's `FetchContent`:
 ```cmake
 FetchContent_Declare(
   mantis
-  GIT_REPOSITORY 
+  GIT_REPOSITORY https://github.com/Janos95/mantis 
 )
 
 FetchContent_MakeAvailable(mantis)
