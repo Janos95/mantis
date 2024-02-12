@@ -96,13 +96,6 @@ struct Node {
     int32x4_t children;
 };
 
-struct LeafNode {
-    float32x4_t x_coords = vdupq_n_f32(FLT_MAX);
-    float32x4_t y_coords = vdupq_n_f32(FLT_MAX);
-    float32x4_t z_coords = vdupq_n_f32(FLT_MAX);
-    int32x4_t indices = vdupq_n_u32(uint32_t(-1));
-};
-
 // ============================= SIMD ===============================
 
 #ifdef MANTIS_USE_NEON
@@ -294,6 +287,13 @@ inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x
 }
 
 // ============================= BVH ===============================
+
+struct LeafNode {
+    float32x4_t x_coords = dup_float(FLT_MAX);
+    float32x4_t y_coords = dup_float(FLT_MAX);
+    float32x4_t z_coords = dup_float(FLT_MAX);
+    int32x4_t indices = dup_int(-1);
+};
 
 #define cmin(a, b) get(distances,a) > get(distances,b) ? b : a
 #define cmax(a, b) get(distances,a) > get(distances,b) ? a : b
