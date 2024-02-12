@@ -3,18 +3,15 @@
 </div>
 
 
-Mantis is a blazing fast C++ library designed for distance to mesh queries. 
+Mantis is a C++ library for doing very fast distance to mesh queries. 
 It implements the [P2M algorithm](https://yuemos.github.io/Projects/P2M/pdf/P2M_author.pdf) and uses SIMD instructions to significantly accelerate query performance.
-
-## Features
+Here are some of the highlights of Mantis:
 
 - **Blazingly Fast**: Mantis is about 2x faster than the original P2M implementation and ca. 4x faster than FCPW.
 
 - **MIT Licensed**: Mantis is permissively licensed under MIT license.
 
 - **Simple to Build**: Thanks to [geograms](https://github.com/BrunoLevy/geogram) pluggable delaunay module, Mantis only consists of four files and doesn't require any external dependencies.
-
-- **Fast Preprocessing**: Not yet there, but on the roadmap. 
 
 ## Getting Started
 
