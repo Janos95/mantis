@@ -33,5 +33,4 @@ add_executable(tests tests.cpp)
 target_link_libraries(tests PRIVATE doctest::doctest mantis P2M)
 target_compile_definitions(tests PRIVATE ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../assets/")
 
-enable_testing()
-add_test(NAME MantisTest COMMAND tests)
+add_test(NAME tests COMMAND tests)

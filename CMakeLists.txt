@@ -23,6 +23,7 @@ target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 #target_link_options(mantis PUBLIC -fsanitize=address)
 
 if (MANTIS_BUILD_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif()
 

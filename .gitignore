@@ -1,4 +1,5 @@
 cmake-build-*/
 bench/
+Testing/
 .idea/
 .DS_Store
