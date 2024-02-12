@@ -1,4 +1,4 @@
-name: CMake MacOS
+name: CMake Cross-Platform
 
 on:
   push:
@@ -8,21 +8,32 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest-xlarge
+    strategy:
+      matrix:
+        os: [macos-latest-xlarge, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Configure CMake
-      run: |
-        mkdir build
-        cmake -B build -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -S .
-      working-directory: ${{ github.workspace }}
+      - name: Configure CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir build
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -S .
+        working-directory: ${{ github.workspace }}
 
-    - name: Build
-      run: cmake --build build --config Release
-      working-directory: ${{ github.workspace }}
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir build
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -S .
+        working-directory: ${{ github.workspace }}
 
-    - name: Test
-      run: ctest --build-config Release
-      working-directory: ${{ github.workspace }}/build
+      - name: Build
+        run: cmake --build build --config Release
+        working-directory: ${{ github.workspace }}
+
+      - name: Test
+        run: ctest --build-config Release
+        working-directory: ${{ github.workspace }}/build
