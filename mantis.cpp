@@ -280,7 +280,7 @@ inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x
     float32x4_t dy = max(sub(node.minCorners[1], qy), sub(qy, node.maxCorners[1]));
     dy = max(dy, dup_float(0.0f));
     float32x4_t dz = max(sub(node.minCorners[2], qz), sub(qz, node.maxCorners[2]));
-    dz = max(dz, vdupq_n_f32(0.0f));
+    dz = max(dz, dup_float(0.0f));
     // Compute squared distances for each box
     float32x4_t squaredDist = length_squared(dx, dy, dz);
     return squaredDist;
