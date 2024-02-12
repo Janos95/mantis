@@ -1051,7 +1051,7 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
 
     GEO::vec3 cp;
     if (result.primitive_index < points.size()) {
-        auto p = points[result.primitive_index];
+        cp = points[result.primitive_index];
         result.type = PrimitiveType::Vertex;
     } else if (result.primitive_index < points.size() + edges.size()) {
         int offset = (int) points.size();

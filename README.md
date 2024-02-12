@@ -64,8 +64,21 @@ printf("distance to mesh is %f\n", std::sqrt(result.distance_squared));
 
 ```
 
-The example folder contains two more complex examples how mantis can be used.
-walk of spheres algorithm and how mantis can be used to turn a triangle mesh into a signed distance field.
+The example folder includes two demos using Mantis. The first one demonstrates converting a triangle mesh into a signed distance field, which is useful for things like implicit modeling.
+In the image below you can see how mantis can be used to do a smooth union of a sphere and the stanford bunny while
+achieving interactive frame rates. The distance field for the bunny is calculated on the fly for each frame.
+
+<div align="center">
+<img src="sdf.gif" alt="Smooth union of a sphere and the stanford bunny" width="1000">
+</div>
+
+The second one implements the walk of spheres algorithm, which is a stochastic algorithm to solve laplace equations.
+In the image below you can see how mantis is used to solve the laplace equation on a plane using the walk of spheres algorithm
+and using the x coordinate of the vertex normals of the bunny as a boundary condition.
+
+<div align="center">
+<img src="wos.gif" alt="Solving laplace equation on a plane using the walk of spheres algorithm." width="1000">
+</div>
 
 ## Benchmarks
 

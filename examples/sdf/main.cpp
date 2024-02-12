@@ -10,6 +10,8 @@
 #include "implicit_meshing.h"
 #include "mantis.h"
 
+#include "util.h"
+
 namespace ps = polyscope;
 
 float fOpUnionRound(float a, float b, float r) {
@@ -33,38 +35,35 @@ void callback() {
     //    return fOpUnionRound(cube, sphere, 0.1f);
     //};
 
-    auto f = [center](Vec3 q1) -> double {
-        glm::vec3 q(q1.x, q1.y, q1.z);
-        auto result = accelerator->calc_closest_point(q.x, q.y, q.z);
-        glm::vec3 n;
+    auto get_normal = [](mantis::Result result) {
         switch (result.type) {
-            case mantis::PrimitiveType::Vertex: {
-                n = vertex_normals[result.primitive_index];
-                break;
-            }
+            case mantis::PrimitiveType::Vertex:
+                return vertex_normals[result.primitive_index];
             case mantis::PrimitiveType::Edge: {
-                n = edge_normals[result.primitive_index];
-                break;
+                return edge_normals[result.primitive_index];
             }
             case mantis::PrimitiveType::Face: {
-                n = face_normals[result.primitive_index];
-                break;
+                return face_normals[result.primitive_index];
             }
+            default: return glm::vec3{};
         }
+    };
+
+    auto f = [center, get_normal](Vec3 q1) -> double {
+        glm::vec3 q(q1.x, q1.y, q1.z);
+        auto result = accelerator->calc_closest_point(q.x, q.y, q.z);
+        glm::vec3 n = get_normal(result);
         glm::vec3 cp(result.closest_point[0], result.closest_point[1], result.closest_point[2]);
-        float sign = glm::dot(n, q - cp) > 0 ? 1. : -1.;
+        float sign = glm::dot(n, q - cp) > 0 ? 1.f : -1.f;
         float sdf_mesh = std::sqrt(result.distance_squared) * sign;
-        float sphere = glm::length(q - center) - 0.3;
+        float sphere = glm::length(q - center) - 0.3f;
         return fOpUnionRound(sdf_mesh, sphere, 0.25);
     };
 
     auto start = std::chrono::high_resolution_clock::now();
     auto mesh = generate_mesh(f, 800);
     auto end = std::chrono::high_resolution_clock::now();
-    printf("Meshing took: %d ms\n",
-           (int) std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
-
-    ps::registerSurfaceMesh("my mesh", mesh.vertices, mesh.quads);
+    ps::registerSurfaceMesh("mesh", mesh.vertices, mesh.quads);
 }
 
 void load_obj(const std::string &path,
