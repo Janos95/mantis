@@ -13,5 +13,3 @@ endif()
 
 target_include_directories(sdf PRIVATE external)
 target_compile_definitions(sdf PRIVATE ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/")
-
-target_link_libraries(sdf PRIVATE utils)

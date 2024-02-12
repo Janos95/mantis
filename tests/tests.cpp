@@ -188,7 +188,11 @@ bool check_random_samples(const mantis::AccelerationStructure &accelerator, cons
             CHECK_EQ(distance, doctest::Approx(distToFace).epsilon(eps));
         }
 
-        CHECK(distance == doctest::Approx(p2m_result.dis).epsilon(eps));
+        auto expectedDist = doctest::Approx(p2m_result.dis).epsilon(eps);
+        float distToCp = distp2p({result.closest_point[0], result.closest_point[1], result.closest_point[2]}, {x, y, z});
+
+        CHECK_EQ(distToCp, expectedDist);
+        CHECK_EQ(distance, expectedDist);
     }
 
     CHECK(max_diff == doctest::Approx(0.0).epsilon(eps));
