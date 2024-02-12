@@ -16,6 +16,10 @@ add_library(mantis
         mantis.cpp
 )
 
+if(MSVC)
+    target_compile_options(mantis PRIVATE "/arch:AVX")
+endif()
+
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 #enable address sanitizer
