@@ -2,6 +2,7 @@
 <img src="logo.svg" alt="Mantis Logo" width="400" height="400">
 </div>
 
+[![macos, linux, windows](https://github.com/Janos95/mantis/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/Janos95/mantis/actions/workflows/cmake-multi-platform.yml)
 
 Mantis is a C++ library for doing very fast distance to mesh queries. 
 It implements the [P2M algorithm](https://yuemos.github.io/Projects/P2M/pdf/P2M_author.pdf) and uses SIMD instructions to significantly accelerate query performance.
