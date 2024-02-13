@@ -10,21 +10,13 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest-xlarge, windows-latest]
+        os: [macos-latest-xlarge, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Configure CMake (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          mkdir build
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -S .
-        working-directory: ${{ github.workspace }}
-
-      - name: Configure CMake (Windows)
-        if: runner.os == 'Windows'
+      - name: Configure CMake
         run: |
           mkdir build
           cmake -B build -DCMAKE_BUILD_TYPE=Release -S .
