@@ -75,18 +75,18 @@
 
 #if defined(GEO_DYNAMIC_LIBS)
 #if defined(_MSC_VER)
-                                                                                                                        #define GEO_IMPORT __declspec(dllimport)
-      #define GEO_EXPORT __declspec(dllexport)
+#define GEO_IMPORT
+#define GEO_EXPORT
 #elif defined(__GNUC__)
 #define GEO_IMPORT
 #define GEO_EXPORT __attribute__ ((visibility("default")))
 #else
-                                                                                                                        #define GEO_IMPORT
-      #define GEO_EXPORT
+#define GEO_IMPORT
+#define GEO_EXPORT
 #endif
 #else
-                                                                                                                        #define GEO_IMPORT
-   #define GEO_EXPORT
+#define GEO_IMPORT
+#define GEO_EXPORT
 #endif
 
 #ifdef geogram_EXPORTS
