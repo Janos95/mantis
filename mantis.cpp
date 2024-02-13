@@ -70,7 +70,6 @@ struct FaceData {
 
 struct EdgeData {
     uint32_t start = uint32_t(-1), end = uint32_t(-1);
-    uint32_t left_face = uint32_t(-1), right_face = uint32_t(-1);
     GEO::vec4 clipping_planes[4];
     int num_planes = 0;
 };
@@ -721,6 +720,8 @@ struct Impl {
     std::vector<std::vector<PackedEdge>> intercepted_edges_packed;
     std::vector<std::vector<PackedFace>> intercepted_faces_packed;
 
+    std::map<std::pair<index_t, index_t>, size_t> edge_index;
+
 #ifdef DEBUG_MANTIS
     std::map<std::pair<index_t, index_t>, GEO::ConvexCell> vertex_edge_cells;
     std::map<std::pair<index_t, index_t>, GEO::ConvexCell> vertex_face_cells;
@@ -730,9 +731,85 @@ struct Impl {
 #endif
 };
 
+struct PointEq {
+    bool operator()(const GEO::vec3 &a, const GEO::vec3 &b) const {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    }
+};
+
+struct PointHash {
+    size_t operator()(const GEO::vec3 &p) const {
+        size_t h = 0;
+        for (size_t i = 0; i < 3; ++i) {
+            h ^= std::hash<double>{}(p[i]) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        }
+        return h;
+    }
+};
+
+bool check_points(std::vector<GEO::vec3> points) {
+    for(auto p : points) {
+        if(!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+            return false;
+        }
+    }
+
+    // check for duplicates
+    std::unordered_map<GEO::vec3, int, PointHash, PointEq> point_map;
+    for(auto p : points) {
+        point_map[p]++;
+    }
+
+    for(auto [p, count] : point_map) {
+        if(count > 1) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void deduplicate_points(std::vector<GEO::vec3>& points, std::vector<std::array<uint32_t, 3>>& triangles) {
+    std::vector<int> vertices(points.size());
+    std::iota(vertices.begin(), vertices.end(), 0);
+
+    std::sort(vertices.begin(), vertices.end(), [&points](int a, int b) {
+        return std::tie(points[a].x, points[a].y, points[a].z) < std::tie(points[b].x, points[b].y, points[b].z);
+    });
+
+    std::vector<GEO::vec3> unique_points;
+    unique_points.reserve(points.size());
+    std::vector<uint32_t> index_map(points.size());
+
+    auto is_equal = [](const GEO::vec3& a, const GEO::vec3& b) {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    };
+
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        if (i == 0 || !is_equal(points[vertices[i]], points[vertices[i - 1]])) {
+            unique_points.push_back(points[vertices[i]]);
+        }
+        index_map[vertices[i]] = static_cast<uint32_t>(unique_points.size() - 1);
+    }
+
+    if(unique_points.size() == points.size()) {
+        return;
+    }
+
+    points.swap(unique_points);
+
+    for (auto& triangle : triangles) {
+        for (int i = 0; i < 3; ++i) {
+            triangle[i] = index_map[triangle[i]];
+        }
+    }
+}
+
 Impl::Impl(const std::vector<GEO::vec3> &points, const std::vector<std::array<index_t, 3>> &triangles,
            double limit_cube_len)
         : points(points), triangles(triangles), bvh(points), limit_cube_len(limit_cube_len) {
+
+    assert(check_points(points));
 
     static int init_geogram = [] {
         GEO::initialize();
@@ -740,19 +817,16 @@ Impl::Impl(const std::vector<GEO::vec3> &points, const std::vector<std::array<in
     }();
     (void) init_geogram;
 
-    std::map < std::pair<index_t, index_t>, EdgeData > edge_map;
-    for (index_t f = 0; f < triangles.size(); ++f) {
-        auto t = triangles[f];
+    std::map<std::pair<index_t, index_t>, EdgeData> edge_map;
+
+    for (auto t: triangles) {
         for (int i = 0; i < 3; ++i) {
             index_t v0 = t[i];
             index_t v1 = t[(i + 1) % 3];
-            bool is_left = true;
             if (v0 > v1) {
                 std::swap(v0, v1);
-                is_left = false;
             }
-            EdgeData e{v0, v1};
-            auto [it, inserted] = edge_map.emplace(std::pair{v0, v1}, e);
+            auto [it, inserted] = edge_map.emplace(std::pair{v0, v1}, EdgeData{v0, v1});
             if (inserted) {
                 // populate end planes of edge
                 GEO::vec3 start_pt = points[v0];
@@ -763,13 +837,6 @@ Impl::Impl(const std::vector<GEO::vec3> &points, const std::vector<std::array<in
                 auto &ed = it->second;
                 ed.clipping_planes[ed.num_planes++] = to_vec4(n1, -GEO::dot(n1, start_pt));
                 ed.clipping_planes[ed.num_planes++] = to_vec4(n2, -GEO::dot(n2, end_pt));
-            }
-            if (is_left) {
-                assert(it->second.left_face == index_t(-1));
-                it->second.left_face = f;
-            } else {
-                assert(it->second.right_face == index_t(-1));
-                it->second.right_face = f;
             }
         }
     }
@@ -799,22 +866,26 @@ Impl::Impl(const std::vector<GEO::vec3> &points, const std::vector<std::array<in
         faces[f].pt_on_plane = p0;
 
         auto &ed0 = edge_map[std::minmax(v0, v1)];
-        ed0.clipping_planes[ed0.num_planes++] = -plane2;
+        if(ed0.num_planes < 4) {
+            ed0.clipping_planes[ed0.num_planes++] = -plane2;
+        }
 
         auto &ed1 = edge_map[std::minmax(v1, v2)];
-        ed1.clipping_planes[ed1.num_planes++] = -plane0;
+        if(ed1.num_planes < 4) {
+            ed1.clipping_planes[ed1.num_planes++] = -plane0;
+        }
 
         auto &ed2 = edge_map[std::minmax(v2, v0)];
-        ed2.clipping_planes[ed2.num_planes++] = -plane1;
-
+        if(ed2.num_planes < 4) {
+            ed2.clipping_planes[ed2.num_planes++] = -plane1;
+        }
     }
 
     edges.reserve(edge_map.size());
     for (const auto &[key, edge]: edge_map) {
-        assert(edge.left_face != index_t(-1));
-        assert(edge.right_face != index_t(-1));
-        assert(edge.num_planes == 4);
+        assert(edge.num_planes <= 4);
         edges.push_back(edge);
+        edge_index[key] = edges.size() - 1;
     }
 
     compute_interception_list();
@@ -840,10 +911,12 @@ void Impl::compute_interception_list() {
     copy.emplace_back(l, -l, -l);
     copy.emplace_back(-l, -l, -l);
 
+    assert(check_points(copy));
+
     GEO::SmartPointer<GEO::PeriodicDelaunay3d> delaunay = new GEO::PeriodicDelaunay3d(false, 1.0);
     delaunay->set_keeps_infinite(true);
-    delaunay->set_vertices(copy.size(), (double *) copy.data());
     delaunay->set_stores_neighbors(true);
+    delaunay->set_vertices(copy.size(), (double *) copy.data());
     delaunay->compute();
 
     GEO::PeriodicDelaunay3d::IncidentTetrahedra W;
@@ -956,8 +1029,8 @@ void Impl::compute_interception_list() {
 
             //delaunay->copy_Laguerre_cell_from_Delaunay(v, C, W);
             GEO::ConvexCell C = voronoi_cells[v];
-            for (const GEO::vec4 &clipping_plane: edges[e].clipping_planes) {
-                C.clip_by_plane(clipping_plane);
+            for (size_t i = 0; i < edges[e].num_planes; ++i) {
+                C.clip_by_plane(edges[e].clipping_planes[i]);
             }
             if (C.empty()) {
                 continue;
@@ -1221,6 +1294,7 @@ AccelerationStructure::AccelerationStructure(const float *points, size_t num_poi
     for (size_t i = 0; i < num_faces; ++i) {
         faces_vec[i] = {indices[3 * i], indices[3 * i + 1], indices[3 * i + 2]};
     }
+    deduplicate_points(points_vec, faces_vec);
     impl = new Impl(points_vec, faces_vec, limit_cube_len);
 }
 
@@ -1255,18 +1329,20 @@ Result AccelerationStructure::calc_closest_point(std::array<float, 3> q) const {
 std::vector<std::array<uint32_t, 3>> AccelerationStructure::get_face_edges() const {
     std::vector<std::array<uint32_t, 3>> result(num_faces());
     std::vector<int> current_index(num_faces(), 0);
-    for (size_t i = 0; i < num_edges(); ++i) {
-        const auto &e = impl->edges[i];
-        assert(e.left_face != -1);
-        assert(e.right_face != -1);
-        assert(current_index[e.left_face] < 3);
-        assert(current_index[e.right_face] < 3);
-        result[e.left_face][current_index[e.left_face]++] = i;
-        result[e.right_face][current_index[e.right_face]++] = i;
+
+    for (size_t i = 0; i < num_faces(); ++i) {
+        const auto &f = impl->faces[i];
+        for (size_t j = 0; j < 3; ++j) {
+            auto v0 = impl->triangles[i][j];
+            auto v1 = impl->triangles[i][(j + 1) % 3];
+            auto it = impl->edge_index.find(std::minmax(v0, v1));
+            assert(it != impl->edge_index.end());
+            auto idx = it->second;
+            result[i][current_index[i]++] = idx;
+        }
     }
     return result;
 }
-
 
 std::vector<std::pair<uint32_t, uint32_t>> AccelerationStructure::get_edge_vertices() const {
     std::vector<std::pair<uint32_t, uint32_t>> result(num_edges());

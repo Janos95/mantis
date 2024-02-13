@@ -213,15 +213,18 @@ void run_test_case(const std::string& name, size_t num_samples, double eps) {
 }
 
 
-// TODO: not working because has boundary edges
+// TODO: crashes geogram for some reason
 //TEST_CASE("eba") {
 //    run_test_case("eba.obj", 1e4, 1e-6);
 //}
 
-// TODO: not working because has non-manifold edges
-//TEST_CASE("dragon") {
-//    run_test_case("dragon.obj", 1e4, 1e-6);
-//}
+TEST_CASE("open_cube") {
+    run_test_case("open_cube.obj", 1e4, 1e-6);
+}
+
+TEST_CASE("dragon") {
+    run_test_case("dragon.obj", 1e4, 1e-6);
+}
 
 TEST_CASE("bunny") {
     run_test_case("bunny.obj", 1e4, 1e-6);

@@ -18,7 +18,7 @@ Here are some of the highlights of Mantis:
 
 ### Prerequisites
 
-To build mantis you will need a C++ Compiler with C++11 support.
+To build mantis you will need a C++ Compiler with C++17 support.
 
 ### Building
 
@@ -91,6 +91,5 @@ you can see the slowdown compared to mantis.
 
 ## Caviats
 
-- Currently, mantis is only tested with meshes which don't have duplicate vertices.
+- The construction of the acceleration structure is not optimized yet, so it's pretty slow for very large meshes.
 - For vertices with long interception lists, the original P2M paper suggests to implement an R-tree to speed up the query. This is not implemented in Mantis yet. This could potentially lead to a slowdown for highly symmetric shapes such as a perfect sepeher.
-- Even with the R-tree optimizations, shapes such as a perfect sphere will consume much more memory than a bvh since every interception list will contain ever face.
