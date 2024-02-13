@@ -24,14 +24,10 @@ endif()
 
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-#enable address sanitizer
-#target_compile_options(mantis PUBLIC -fsanitize=address)
-#target_link_options(mantis PUBLIC -fsanitize=address)
-
-#if (MANTIS_BUILD_TESTS)
-#    enable_testing()
-#    add_subdirectory(tests)
-#endif()
+if (MANTIS_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 if (MANTIS_BUILD_EXAMPLES)
     add_subdirectory(examples)
