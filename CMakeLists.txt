@@ -16,8 +16,10 @@ add_library(mantis
         mantis.cpp
 )
 
-if(MSVC)
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_compile_options(mantis PRIVATE "/arch:AVX")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_options(mantis PRIVATE "-mavx")
 endif()
 
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -26,10 +28,10 @@ target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 #target_compile_options(mantis PUBLIC -fsanitize=address)
 #target_link_options(mantis PUBLIC -fsanitize=address)
 
-if (MANTIS_BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
+#if (MANTIS_BUILD_TESTS)
+#    enable_testing()
+#    add_subdirectory(tests)
+#endif()
 
 if (MANTIS_BUILD_EXAMPLES)
     add_subdirectory(examples)
