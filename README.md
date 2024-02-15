@@ -45,7 +45,7 @@ Here is a simple example of how to use mantis.
 ```cpp
 #include <mantis.h>
 
-// you're triangle mesh
+// your triangle mesh
 std::vector<std::array<float, 3>> points;
 std::vector<std::array<uint32_t, 3>> triangles;
 
