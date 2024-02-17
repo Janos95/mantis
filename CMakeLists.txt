@@ -9,19 +9,31 @@ option(MANTIS_BUILD_EXAMPLES "Build the examples" OFF)
 option(MANTIS_BUILD_BENCH "Build the benchmarks" OFF)
 option(MANTIS_BUILD_TESTS "Build the tests" ON)
 
+# This is split out into a separate target to avoid setting compile flags that would
+# affect the correctness of geogram's exact predicates.
+add_library(delaunay
+    Delaunay_psm.cpp
+    Delaunay_psm.h
+)
+
 add_library(mantis
-        Delaunay_psm.h
-        Delaunay_psm.cpp
         mantis.h
         mantis.cpp
 )
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    target_compile_options(mantis PRIVATE "/arch:AVX")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_compile_options(mantis PRIVATE "-mavx")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(mantis PRIVATE "-march=native")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+    find_package(AVX)
+    if(CXX_AVX512_FOUND)
+        target_compile_options(mantis PRIVATE "/arch:AVX512")
+    else()
+        target_compile_options(mantis PRIVATE "/arch:AVX")
+    endif ()
 endif()
 
+target_link_libraries(mantis PRIVATE delaunay)
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 if (MANTIS_BUILD_TESTS)
@@ -33,6 +45,6 @@ if (MANTIS_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-#if (MANTIS_BUILD_BENCH)
-#    add_subdirectory(bench)
-#endif()
+if (MANTIS_BUILD_BENCH)
+    add_subdirectory(bench)
+endif()

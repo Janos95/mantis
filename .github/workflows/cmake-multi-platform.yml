@@ -27,5 +27,5 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Test
-        run: ctest --build-config Release
+        run: ctest --build-config Release --output-on-failure
         working-directory: ${{ github.workspace }}/build

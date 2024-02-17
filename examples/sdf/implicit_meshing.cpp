@@ -2,6 +2,7 @@
 #include "parallel.h"
 
 #include <memory>
+#include <chrono>
 
 #include "probabilistic-quadrics.hh"
 #include "hash_table7.hpp"

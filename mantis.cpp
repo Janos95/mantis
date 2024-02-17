@@ -1,36 +1,61 @@
 #include "mantis.h"
 #include "Delaunay_psm.h"
 
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#define MANTIS_USE_NEON
-#elif defined(__AVX__)
-#define MANTIS_USE_AVX
-#else
-#error "Mantis: No SIMD support detected, platform not supported."
-#endif
-
-#ifdef MANTIS_USE_NEON
-
-#include <arm_neon.h>
-
-#endif
-
-#ifdef MANTIS_USE_AVX
-#include <immintrin.h>
-#endif
-
 #include <queue>
 #include <unordered_set>
 #include <algorithm>
 #include <numeric>
 #include <thread>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#define MANTIS_HAS_NEON
+#elif defined(__AVX__)
+#define MANTIS_HAS_AVX
+#ifdef __AVX512F__
+#define MANTIS_HAS_AVX512
+#endif
+#else
+#error "Mantis: No SIMD support detected, platform not supported."
+#endif
+
+#ifdef MANTIS_HAS_NEON
+#include <arm_neon.h>
+#endif
+
+#ifdef MANTIS_HAS_AVX
+#include <immintrin.h>
+#endif
+
 //#define DEBUG_MANTIS
 
-#ifdef MANTIS_USE_AVX
+#ifdef MANTIS_HAS_NEON
+// float32x4_t and int32x4_t are already defined in arm_neon.h
+using mask4_t = uint32x4_t;
+#endif
+
+#ifdef MANTIS_HAS_AVX
 using float32x4_t = __m128;
 using int32x4_t = __m128i;
-using uint32x4_t = __m128i;
+using mask4_t = __m128i;
+#endif
+
+#ifdef MANTIS_HAS_AVX512
+using float32x16_t = __m512;
+using int32x16_t = __m512i;
+using mask16_t = __mmask16;
+#endif
+
+#ifdef MANTIS_HAS_AVX512
+constexpr size_t SimdWidth = 16;
+using float32xN_t = float32x16_t;
+using int32xN_t = int32x16_t;
+using maskN_t = mask16_t;
+#else
+// For both SSE, AVX and NEON
+constexpr size_t SimdWidth = 4;
+using float32xN_t = float32x4_t;
+using int32xN_t = int32x4_t;
+using maskN_t = mask4_t;
 #endif
 
 namespace mantis {
@@ -40,22 +65,21 @@ using index_t = GEO::index_t;
 // ============================= MISC STRUCTS ===============================
 
 struct PackedEdge {
-    float32x4_t min_x;
-    float32x4_t start[3];
-    float32x4_t dir[3];
-    float32x4_t dir_len_squared;
-    int32x4_t primitive_idx;
+    float32xN_t min_x;
+    float32xN_t start[3];
+    float32xN_t dir[3];
+    float32xN_t dir_len_squared;
+    int32xN_t primitive_idx;
 };
 
 struct PackedFace {
-    float32x4_t min_x;
-    float32x4_t face_plane[4];
-    float32x4_t edge_plane0[4];
-    float32x4_t edge_plane1[4];
-    float32x4_t edge_plane2[4];
-    int32x4_t primitive_idx;
+    float32xN_t min_x;
+    float32xN_t face_plane[4];
+    float32xN_t edge_plane0[4];
+    float32xN_t edge_plane1[4];
+    float32xN_t edge_plane2[4];
+    int32xN_t primitive_idx;
 };
-
 
 struct FaceData {
     // Plane coefficients of the face plane. Normal is of unit length.
@@ -97,7 +121,7 @@ struct Node {
 
 // ============================= SIMD ===============================
 
-#ifdef MANTIS_USE_NEON
+#ifdef MANTIS_HAS_NEON
 
 // a*b + c
 float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
@@ -148,17 +172,21 @@ float32x4_t select_float(uint32x4_t condition, float32x4_t trueValue, float32x4_
     return vbslq_f32(condition, trueValue, falseValue);
 }
 
-float32x4_t dup_float(float x) {
+template<int N = SimdWidth>
+float32x4_t dupf32(float x) {
+    static_assert(N == 4);
     return vdupq_n_f32(x);
 }
 
-int32x4_t dup_int(int32_t x) {
+template<int N = SimdWidth>
+int32x4_t dupi32(int32_t x) {
+    static_assert(N == 4);
     return vdupq_n_s32(x);
 }
 
 #endif
 
-#ifdef MANTIS_USE_AVX
+#ifdef MANTIS_HAS_AVX
 
 float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
     return _mm_add_ps(_mm_mul_ps(a, b), c); // TODO: check for fma
@@ -188,15 +216,15 @@ float32x4_t div(float32x4_t a, float32x4_t b) {
     return _mm_div_ps(a, b);
 }
 
-uint32x4_t leq(float32x4_t a, float32x4_t b) {
+mask4_t leq(float32x4_t a, float32x4_t b) {
     return _mm_castps_si128(_mm_cmple_ps(a, b)); // Cast result to integer type
 }
 
-uint32x4_t geq(float32x4_t a, float32x4_t b) {
+mask4_t geq(float32x4_t a, float32x4_t b) {
     return _mm_castps_si128(_mm_cmpge_ps(a, b)); // Cast result to integer type
 }
 
-uint32x4_t logical_and(uint32x4_t a, uint32x4_t b) {
+mask4_t logical_and(mask4_t a, mask4_t b) {
     return _mm_and_si128(a, b);
 }
 
@@ -204,17 +232,118 @@ int32x4_t select_int(int32x4_t condition, int32x4_t trueValue, int32x4_t falseVa
     return _mm_blendv_epi8(falseValue, trueValue, condition);
 }
 
-float32x4_t select_float(uint32x4_t condition, float32x4_t trueValue, float32x4_t falseValue) {
+float32x4_t select_float(mask4_t condition, float32x4_t trueValue, float32x4_t falseValue) {
     __m128 conditionAsFloat = _mm_castsi128_ps(condition);
     return _mm_blendv_ps(falseValue, trueValue, conditionAsFloat);
 }
 
-float32x4_t dup_float(float x) {
+#ifndef MANTIS_HAS_AVX512
+template<int N = SimdWidth>
+auto dupf32(float x) {
+    static_assert(N == 4);
     return _mm_set1_ps(x);
 }
 
-int32x4_t dup_int(int32_t x) {
+template<int N = SimdWidth>
+auto dupi32(int32_t x) {
+    static_assert(N == 4);
     return _mm_set1_epi32(x);
+}
+#endif
+
+#endif
+
+#ifdef MANTIS_HAS_AVX512
+
+float32x16_t fma(float32x16_t a, float32x16_t b, float32x16_t c) {
+    return _mm512_fmadd_ps(a, b, c);
+}
+
+float32x16_t min(float32x16_t a, float32x16_t b) {
+    return _mm512_min_ps(a, b);
+}
+
+float32x16_t max(float32x16_t a, float32x16_t b) {
+    return _mm512_max_ps(a, b);
+}
+
+float32x16_t sub(float32x16_t a, float32x16_t b) {
+    return _mm512_sub_ps(a, b);
+}
+
+float32x16_t add(float32x16_t a, float32x16_t b) {
+    return _mm512_add_ps(a, b);
+}
+
+float32x16_t mul(float32x16_t a, float32x16_t b) {
+    return _mm512_mul_ps(a, b);
+}
+
+float32x16_t div(float32x16_t a, float32x16_t b) {
+    return _mm512_div_ps(a, b);
+}
+
+mask16_t leq(float32x16_t a, float32x16_t b) {
+    return _mm512_cmp_ps_mask(a, b, _CMP_LE_OS);
+}
+
+mask16_t geq(float32x16_t a, float32x16_t b) {
+    return _mm512_cmp_ps_mask(a, b, _CMP_GE_OS);
+}
+
+mask16_t logical_and(mask16_t a, mask16_t b) {
+    return _mm512_kand(a, b);
+}
+
+int32x16_t select_int(mask16_t condition, int32x16_t trueValue, int32x16_t falseValue) {
+    return _mm512_mask_blend_epi32(condition, falseValue, trueValue);
+}
+
+float32x16_t select_float(mask16_t condition, float32x16_t trueValue, float32x16_t falseValue) {
+    return _mm512_mask_blend_ps(condition, falseValue, trueValue);
+}
+
+template<int N = SimdWidth>
+auto dupf32(float x) {
+
+    if constexpr(N == 4) {
+        return _mm_set1_ps(x);
+    } else if constexpr(N == 16) {
+        return _mm512_set1_ps(x);
+    }
+}
+
+template<int N = SimdWidth>
+auto dupi32(int32_t x) {
+    if constexpr(N == 4) {
+        return _mm_set1_epi32(x);
+    } else if constexpr(N == 16) {
+        return _mm512_set1_epi32(x);
+    }
+}
+
+void set(float32x16_t &v, size_t i, float x) {
+    assert(i < 16);
+    auto ptr = (float *) &v;
+    ptr[i] = x;
+}
+
+void set(int32x16_t &v, size_t i, int x) {
+    assert(i < 16);
+    auto ptr = (int *) &v;
+    ptr[i] = x;
+}
+
+float get(const float32x16_t &v, size_t i) {
+    assert(i < 16);
+    auto ptr = (const float *) &v;
+    return ptr[i];
+}
+
+int get(const int32x16_t &v, size_t i) {
+    assert(i < 16);
+    auto ptr = (const int *) &v;
+    return ptr[i];
 }
 
 #endif
@@ -241,32 +370,33 @@ int get(const int32x4_t &v, size_t i) {
     return ptr[i];
 }
 
-float32x4_t dot(float32x4_t ax, float32x4_t ay, float32x4_t az,
-                float32x4_t bx, float32x4_t by, float32x4_t bz) {
-    float32x4_t result = mul(ax, bx);
+template<class T>
+T dot(T ax, T ay, T az, T bx, T by, T bz) {
+    T result = mul(ax, bx);
     result = fma(ay, by, result);
     result = fma(az, bz, result);
     return result;
 }
 
-float32x4_t length_squared(float32x4_t x, float32x4_t y, float32x4_t z) {
-    float32x4_t result = mul(x, x);
+template<class T>
+T length_squared(T x, T y, T z) {
+    T result = mul(x, x);
     result = fma(y, y, result);
     result = fma(z, z, result);
     return result;
 }
 
-float32x4_t distance_squared(float32x4_t ax, float32x4_t ay, float32x4_t az,
-                             float32x4_t bx, float32x4_t by, float32x4_t bz) {
-    float32x4_t dx = sub(ax, bx);
-    float32x4_t dy = sub(ay, by);
-    float32x4_t dz = sub(az, bz);
+template<class T>
+T distance_squared(T ax, T ay, T az, T bx, T by, T bz) {
+    T dx = sub(ax, bx);
+    T dy = sub(ay, by);
+    T dz = sub(az, bz);
     return length_squared(dx, dy, dz);
 }
 
-float32x4_t eval_plane(float32x4_t px, float32x4_t py, float32x4_t pz, float32x4_t plane_x, float32x4_t plane_y,
-                       float32x4_t plane_z, float32x4_t plane_w) {
-    float32x4_t result = mul(px, plane_x);
+template<class T>
+T eval_plane(T px, T py, T pz, T plane_x, T plane_y, T plane_z, T plane_w) {
+    T result = mul(px, plane_x);
     result = fma(py, plane_y, result);
     result = fma(pz, plane_z, result);
     return add(result, plane_w);
@@ -275,11 +405,11 @@ float32x4_t eval_plane(float32x4_t px, float32x4_t py, float32x4_t pz, float32x4
 inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x4_t qy, const float32x4_t qz) {
     // Compute distances in x, y, z directions and clamp them to zero if they are negative
     float32x4_t dx = max(sub(node.minCorners[0], qx), sub(qx, node.maxCorners[0]));
-    dx = max(dx, dup_float(0.0f));
+    dx = max(dx, dupf32<4>(0.0f));
     float32x4_t dy = max(sub(node.minCorners[1], qy), sub(qy, node.maxCorners[1]));
-    dy = max(dy, dup_float(0.0f));
+    dy = max(dy, dupf32<4>(0.0f));
     float32x4_t dz = max(sub(node.minCorners[2], qz), sub(qz, node.maxCorners[2]));
-    dz = max(dz, dup_float(0.0f));
+    dz = max(dz, dupf32<4>(0.0f));
     // Compute squared distances for each box
     float32x4_t squaredDist = length_squared(dx, dy, dz);
     return squaredDist;
@@ -288,10 +418,10 @@ inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x
 // ============================= BVH ===============================
 
 struct LeafNode {
-    float32x4_t x_coords = dup_float(FLT_MAX);
-    float32x4_t y_coords = dup_float(FLT_MAX);
-    float32x4_t z_coords = dup_float(FLT_MAX);
-    int32x4_t indices = dup_int(-1);
+    float32xN_t x_coords = dupf32(FLT_MAX);
+    float32xN_t y_coords = dupf32(FLT_MAX);
+    float32xN_t z_coords = dupf32(FLT_MAX);
+    int32xN_t indices = dupi32(-1);
 };
 
 #define cmin(a, b) get(distances,a) > get(distances,b) ? b : a
@@ -312,31 +442,32 @@ struct LeafNode {
         cswap(b, c);       \
     } while (0)
 
+
 constexpr static long long NUM_PACKETS = 8;
 
 class Bvh {
 public:
-    void updateClosestPoint(const float32x4_t &pt_x,
-                            const float32x4_t &pt_y,
-                            const float32x4_t &pt_z,
+    void updateClosestPoint(const float32xN_t &pt_x,
+                            const float32xN_t &pt_y,
+                            const float32xN_t &pt_z,
                             size_t firstPacket,
                             size_t numPackets,
                             float &bestDistSq,
                             int &bestIdx) const {
-        float32x4_t minDist = dup_float(bestDistSq);
-        int32x4_t minIdx = dup_int(bestIdx);
+        float32xN_t minDist = dupf32(bestDistSq);
+        int32xN_t minIdx = dupi32(bestIdx);
 
         for (size_t i = firstPacket; i < firstPacket + numPackets; ++i) {
-            // Compute squared distances for a batch of 4 points
+            // Compute squared distances for a batch of SimdWidth points
             const auto &leaf = m_leaves[i];
-            float32x4_t dx = sub(pt_x, leaf.x_coords);
-            float32x4_t dy = sub(pt_y, leaf.y_coords);
-            float32x4_t dz = sub(pt_z, leaf.z_coords);
-            float32x4_t distSq = length_squared(dx, dy, dz);
+            float32xN_t dx = sub(pt_x, leaf.x_coords);
+            float32xN_t dy = sub(pt_y, leaf.y_coords);
+            float32xN_t dz = sub(pt_z, leaf.z_coords);
+            float32xN_t distSq = length_squared(dx, dy, dz);
 
             // Comparison mask for distances
             // if distSq >= minDist => keep minDist
-            uint32x4_t keepMinDist = geq(distSq, minDist);
+            maskN_t keepMinDist = geq(distSq, minDist);
             minDist = min(minDist, distSq);
 
             // Update the indices
@@ -344,7 +475,7 @@ public:
         }
 
         // Find overall minimum distance and index
-        for (int j = 0; j < 4; ++j) {
+        for (int j = 0; j < SimdWidth; ++j) {
             if (get(minDist, j) < bestDistSq) {
                 bestDistSq = get(minDist, j);
                 bestIdx = get(minIdx, j);
@@ -369,7 +500,7 @@ public:
         assert(node_idx == 0 || node_idx < 0);
     }
 
-    int closestPoint(const GEO::vec3 &q) const {
+    std::pair<int, float> closestPoint(const GEO::vec3 &q) const {
         constexpr int MAX_STACK_SIZE = 64;
         struct StackNode {
             int nodeIndex;
@@ -382,9 +513,13 @@ public:
         int bestIdx = -1;
 
         // Broadcast query point coordinates to SIMD size
-        float32x4_t q_x = dup_float(q.x);
-        float32x4_t q_y = dup_float(q.y);
-        float32x4_t q_z = dup_float(q.z);
+        float32x4_t q_x4 = dupf32<4>(q.x);
+        float32x4_t q_y4 = dupf32<4>(q.y);
+        float32x4_t q_z4 = dupf32<4>(q.z);
+
+        float32xN_t q_xN = dupf32(q.x);
+        float32xN_t q_yN = dupf32(q.y);
+        float32xN_t q_zN = dupf32(q.z);
 
         // Start with the root node
         stack[stackSize++] = {0, 0.0f};
@@ -399,14 +534,14 @@ public:
             }
             if (current.nodeIndex < 0) {
                 auto [begin, numPackets] = m_leafRange[-(current.nodeIndex + 1)];
-                updateClosestPoint(q_x, q_y, q_z, begin, numPackets, bestDistSq, bestIdx);
+                updateClosestPoint(q_xN, q_yN, q_zN, begin, numPackets, bestDistSq, bestIdx);
                 continue;
             }
 
             const Node &node = m_nodes[current.nodeIndex];
 
             // Compute distances to each child
-            float32x4_t distances = p2bbox(node, q_x, q_y, q_z);
+            float32x4_t distances = p2bbox(node, q_x4, q_y4, q_z4);
             int childIndices[4] = {0, 1, 2, 3};
 
             // Sort children by distance
@@ -423,7 +558,7 @@ public:
             }
         }
 
-        return bestIdx;
+        return {bestIdx, bestDistSq};
     }
 
 private:
@@ -434,7 +569,7 @@ private:
     std::vector<std::pair<int, int>> m_leafRange;
 
     int constructTree(std::vector<int> &indices, size_t begin, size_t end, size_t depth, BoundingBox &box) {
-        if (end - begin <= NUM_PACKETS * 4) {
+        if (end - begin <= NUM_PACKETS * SimdWidth) {
             // Update the bounding box for this leaf node
             box = BoundingBox();
             for (size_t i = begin; i < end; ++i) {
@@ -444,13 +579,13 @@ private:
 
             int leafIdx = int(m_leafRange.size());
             auto firstLeaf = int(m_leaves.size());
-            auto numPackets = int((end - begin + 3) / 4);
+            auto numPackets = int((end - begin + SimdWidth - 1) / SimdWidth);
             m_leafRange.emplace_back(firstLeaf, numPackets);
 
             for (int i = 0; i < numPackets; ++i) {
                 LeafNode leaf{};
-                for (size_t j = 0; j < 4; ++j) {
-                    size_t k = i * 4 + j;
+                for (size_t j = 0; j < SimdWidth; ++j) {
+                    size_t k = i * SimdWidth + j;
                     if (k < end - begin) {
                         set(leaf.x_coords, j, (float) original_points[indices[begin + k]].x);
                         set(leaf.y_coords, j, (float) original_points[indices[begin + k]].y);
@@ -528,12 +663,11 @@ private:
 
 template<class F>
 void parallel_for(size_t begin, size_t end, F f) {
-
     // serial implementation
     //for(size_t i = begin; i < end; ++i) {
     //    f(i);
     //}
-
+    //return;
 
     size_t num_threads = std::thread::hardware_concurrency();
 
@@ -1084,7 +1218,7 @@ void Impl::compute_interception_list() {
     intercepted_edges_packed.resize(nb_points);
     intercepted_faces_packed.resize(nb_points);
 
-    // iterate over vertices and sort interception lists
+    // Pack data into simd friendly data structures
     std::vector<int> order;
     for (index_t v = 0; v < nb_points; ++v) {
         // first reorder edges
@@ -1105,15 +1239,15 @@ void Impl::compute_interception_list() {
         intercepted_edges_bb[v] = std::move(new_intercepted_edges_bb);
 
         // round up number of edge batches
-        size_t num_edge_packed = (intercepted_edges[v].size() + 3) / 4;
+        size_t num_edge_packed = (intercepted_edges[v].size() + SimdWidth - 1) / SimdWidth;
         intercepted_edges_packed[v].resize(num_edge_packed);
 
         for (size_t i = 0; i < num_edge_packed; ++i) {
             PackedEdge packed{};
-            for (size_t j = 0; j < 4; ++j) {
-                if (i * 4 + j < intercepted_edges[v].size()) {
-                    index_t e = intercepted_edges[v][i * 4 + j];
-                    set(packed.min_x, j, (float) intercepted_edges_bb[v][i * 4 + j].lower.x);
+            for (size_t j = 0; j < SimdWidth; ++j) {
+                if (i * SimdWidth + j < intercepted_edges[v].size()) {
+                    index_t e = intercepted_edges[v][i * SimdWidth + j];
+                    set(packed.min_x, j, (float) intercepted_edges_bb[v][i * SimdWidth + j].lower.x);
                     for (size_t d = 0; d < 3; ++d) {
                         set(packed.start[d], j, (float) points[edges[e].start][d]);
                         set(packed.dir[d], j, float(points[edges[e].end][d] - points[edges[e].start][d]));
@@ -1152,16 +1286,16 @@ void Impl::compute_interception_list() {
         intercepted_faces_bb[v] = std::move(new_intercepted_faces_bb);
 
         // round up nb of face batches
-        size_t num_face_packed = (intercepted_faces[v].size() + 3) / 4;
+        size_t num_face_packed = (intercepted_faces[v].size() + SimdWidth - 1) / SimdWidth;
         intercepted_faces_packed[v].resize(num_face_packed);
         intercepted_faces_bb[v].resize(num_face_packed);
 
         for (size_t i = 0; i < num_face_packed; ++i) {
             PackedFace packed{};
-            for (size_t j = 0; j < 4; ++j) {
-                if (i * 4 + j < intercepted_faces[v].size()) {
-                    index_t f = intercepted_faces[v][i * 4 + j];
-                    set(packed.min_x, j, (float) intercepted_faces_bb[v][i * 4 + j].lower.x);
+            for (size_t j = 0; j < SimdWidth; ++j) {
+                if (i * SimdWidth + j < intercepted_faces[v].size()) {
+                    index_t f = intercepted_faces[v][i * SimdWidth + j];
+                    set(packed.min_x, j, (float) intercepted_faces_bb[v][i * SimdWidth + j].lower.x);
                     for (size_t d = 0; d < 4; ++d) {
                         set(packed.face_plane[d], j, (float) faces[f].face_plane[d]);
                         set(packed.edge_plane0[d], j, (float) faces[f].clipping_planes[0][d]);
@@ -1187,14 +1321,14 @@ void Impl::compute_interception_list() {
 }
 
 Result Impl::calc_closest_point(GEO::vec3 q) {
-    int v = bvh.closestPoint(q);
+    auto [v, v_dist2] = bvh.closestPoint(q);
 
-    float32x4_t qx = dup_float((float) q.x);
-    float32x4_t qy = dup_float((float) q.y);
-    float32x4_t qz = dup_float((float) q.z);
+    float32xN_t qx = dupf32((float) q.x);
+    float32xN_t qy = dupf32((float) q.y);
+    float32xN_t qz = dupf32((float) q.z);
 
-    float32x4_t best_d2 = dup_float(float(GEO::distance2(q, points[v])));
-    int32x4_t best_idx = dup_int(v);
+    float32xN_t best_d2 = dupf32(v_dist2);
+    int32xN_t best_idx = dupi32(v);
 
     const auto &v_edges = intercepted_edges_packed[v];
     for (const PackedEdge &pack: v_edges) {
@@ -1202,21 +1336,21 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
             break;
         }
 
-        float32x4_t apx = sub(qx, pack.start[0]);
-        float32x4_t apy = sub(qy, pack.start[1]);
-        float32x4_t apz = sub(qz, pack.start[2]);
+        float32xN_t apx = sub(qx, pack.start[0]);
+        float32xN_t apy = sub(qy, pack.start[1]);
+        float32xN_t apz = sub(qz, pack.start[2]);
 
-        float32x4_t t = div(dot(apx, apy, apz, pack.dir[0], pack.dir[1], pack.dir[2]), pack.dir_len_squared);
+        float32xN_t t = div(dot(apx, apy, apz, pack.dir[0], pack.dir[1], pack.dir[2]), pack.dir_len_squared);
 
         // the result is only valid if t is in [0, 1]
-        uint32x4_t mask = logical_and(leq(dup_float(0.0f), t), leq(t, dup_float(1.0f)));
+        maskN_t mask = logical_and(leq(dupf32(0.0f), t), leq(t, dupf32(1.0f)));
 
         // project onto segment
-        float32x4_t projectedx = fma(t, pack.dir[0], pack.start[0]);
-        float32x4_t projectedy = fma(t, pack.dir[1], pack.start[1]);
-        float32x4_t projectedz = fma(t, pack.dir[2], pack.start[2]);
+        float32xN_t projectedx = fma(t, pack.dir[0], pack.start[0]);
+        float32xN_t projectedy = fma(t, pack.dir[1], pack.start[1]);
+        float32xN_t projectedz = fma(t, pack.dir[2], pack.start[2]);
 
-        float32x4_t d2_line = distance_squared(qx, qy, qz, projectedx, projectedy, projectedz);
+        float32xN_t d2_line = distance_squared(qx, qy, qz, projectedx, projectedy, projectedz);
 
         mask = logical_and(mask, leq(d2_line, best_d2));
         best_d2 = select_float(mask, d2_line, best_d2);
@@ -1230,17 +1364,17 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
         }
 
         // point is inside face region if it is on the positive side of all three planes
-        float32x4_t s0 = eval_plane(qx, qy, qz, pack.edge_plane0[0], pack.edge_plane0[1], pack.edge_plane0[2],
+        float32xN_t s0 = eval_plane(qx, qy, qz, pack.edge_plane0[0], pack.edge_plane0[1], pack.edge_plane0[2],
                                     pack.edge_plane0[3]);
-        float32x4_t s1 = eval_plane(qx, qy, qz, pack.edge_plane1[0], pack.edge_plane1[1], pack.edge_plane1[2],
+        float32xN_t s1 = eval_plane(qx, qy, qz, pack.edge_plane1[0], pack.edge_plane1[1], pack.edge_plane1[2],
                                     pack.edge_plane1[3]);
-        float32x4_t s2 = eval_plane(qx, qy, qz, pack.edge_plane2[0], pack.edge_plane2[1], pack.edge_plane2[2],
+        float32xN_t s2 = eval_plane(qx, qy, qz, pack.edge_plane2[0], pack.edge_plane2[1], pack.edge_plane2[2],
                                     pack.edge_plane2[3]);
 
-        uint32x4_t mask = logical_and(logical_and(leq(dup_float(0.0f), s0), leq(dup_float(0.0f), s1)),
-                                      leq(dup_float(0.0f), s2));
+        maskN_t mask = logical_and(logical_and(leq(dupf32(0.0f), s0), leq(dupf32(0.0f), s1)),
+                                      leq(dupf32(0.0f), s2));
 
-        float32x4_t d2 = eval_plane(qx, qy, qz, pack.face_plane[0], pack.face_plane[1], pack.face_plane[2],
+        float32xN_t d2 = eval_plane(qx, qy, qz, pack.face_plane[0], pack.face_plane[1], pack.face_plane[2],
                                     pack.face_plane[3]);
         d2 = mul(d2, d2);
 
@@ -1252,7 +1386,7 @@ Result Impl::calc_closest_point(GEO::vec3 q) {
     Result result{get(best_d2, 0), get(best_idx, 0)};
 
     // Find overall minimum distance and index
-    for (int j = 1; j < 4; ++j) {
+    for (int j = 1; j < SimdWidth; ++j) {
         if (get(best_d2, j) < result.distance_squared) {
             result.distance_squared = get(best_d2, j);
             result.primitive_index = get(best_idx, j);

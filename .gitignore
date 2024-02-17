@@ -1,5 +1,4 @@
 cmake-build-*/
-bench/
-Testing/
+bench/fcpw/
 .idea/
 .DS_Store

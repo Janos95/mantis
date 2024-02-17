@@ -176,7 +176,8 @@ int main(int, char **) {
     ps::options::groundPlaneMode = ps::GroundPlaneMode::ShadowOnly;
     ps::init();
 
-    load_obj("/Users/jmeny/CLionProjects/mantis/assets/bunny.obj", points, triangles);
+    std::string path = std::string(ASSETS_DIR) + "bunny.obj";
+    load_obj(path, points, triangles);
 
     std::vector<float> pts_data(points.size() * 3);
     for (int i = 0; i < points.size(); ++i) {
