@@ -167,11 +167,15 @@ float32x4_t select_float(uint32x4_t condition, float32x4_t trueValue, float32x4_
     return vbslq_f32(condition, trueValue, falseValue);
 }
 
+template<int N = SimdWidth>
 float32x4_t dupf32(float x) {
+    static_assert(N == 4);
     return vdupq_n_f32(x);
 }
 
+template<int N = SimdWidth>
 int32x4_t dupi32(int32_t x) {
+    static_assert(N == 4);
     return vdupq_n_s32(x);
 }
 
