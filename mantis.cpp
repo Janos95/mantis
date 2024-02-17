@@ -167,11 +167,11 @@ float32x4_t select_float(uint32x4_t condition, float32x4_t trueValue, float32x4_
     return vbslq_f32(condition, trueValue, falseValue);
 }
 
-float32x4_t dup_float(float x) {
+float32x4_t dupf32(float x) {
     return vdupq_n_f32(x);
 }
 
-int32x4_t dup_int(int32_t x) {
+int32x4_t dupi32(int32_t x) {
     return vdupq_n_s32(x);
 }
 
@@ -227,6 +227,20 @@ float32x4_t select_float(mask4_t condition, float32x4_t trueValue, float32x4_t f
     __m128 conditionAsFloat = _mm_castsi128_ps(condition);
     return _mm_blendv_ps(falseValue, trueValue, conditionAsFloat);
 }
+
+#ifndef MANTIS_HAS_AVX512
+template<int N = SimdWidth>
+auto dupf32(float x) {
+    static_assert(N == 4);
+    return _mm_set1_ps(x);
+}
+
+template<int N = SimdWidth>
+auto dupi32(int32_t x) {
+    static_assert(N == 4);
+    return _mm_set1_epi32(x);
+}
+#endif
 
 #endif
 
