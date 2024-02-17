@@ -4,6 +4,7 @@ project(mantis)
 set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
+include(CheckCSourceCompiles)
 
 option(MANTIS_BUILD_EXAMPLES "Build the examples" OFF)
 option(MANTIS_BUILD_BENCH "Build the benchmarks" OFF)
@@ -16,11 +17,10 @@ add_library(mantis
         mantis.cpp
 )
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    #target_compile_options(mantis PRIVATE "-mavx")
-    target_compile_options(mantis PRIVATE "-mavx512f")
-elseif(MSVC)
-    target_compile_options(mantis PRIVATE "/arch:AVX")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(mantis PRIVATE "-march=native")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mantis PRIVATE "/arch:AVX512")
 endif()
 
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -34,6 +34,6 @@ if (MANTIS_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-#if (MANTIS_BUILD_BENCH)
-#    add_subdirectory(bench)
-#endif()
+if (MANTIS_BUILD_BENCH)
+    add_subdirectory(bench)
+endif()

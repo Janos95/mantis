@@ -63,6 +63,9 @@ void callback() {
     auto start = std::chrono::high_resolution_clock::now();
     auto mesh = generate_mesh(f, 800);
     auto end = std::chrono::high_resolution_clock::now();
+
+    std::cout << "meshing time: " << std::chrono::duration<double, std::milli>(end - start).count() << " ms" << std::endl;
+
     ps::registerSurfaceMesh("mesh", mesh.vertices, mesh.quads);
 }
 
@@ -128,7 +131,9 @@ int main() {
     {
         std::vector<std::array<float, 3>> points;
         std::vector<std::array<uint32_t, 3>> triangles;
-        load_obj("/Users/jmeny/CLionProjects/hackweek-testbed/bunny.obj", points, triangles);
+
+        std::string path = std::string(ASSETS_DIR) + "bunny.obj";
+        load_obj(path, points, triangles);
 
         if (points.empty()) {
             std::cerr << "No points loaded" << std::endl;

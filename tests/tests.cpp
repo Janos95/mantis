@@ -218,25 +218,25 @@ void run_test_case(const std::string& name, size_t num_samples, double eps) {
 //    run_test_case("eba.obj", 1e4, 1e-6);
 //}
 
-//TEST_CASE("open_cube") {
-//    run_test_case("open_cube.obj", 1e4, 1e-6);
-//}
-//
-//TEST_CASE("dragon") {
-//    run_test_case("dragon.obj", 1e4, 1e-6);
-//}
-//
-//TEST_CASE("bunny") {
-//    run_test_case("bunny.obj", 1e4, 1e-6);
-//}
-//
-//TEST_CASE("funny_cube") {
-//    run_test_case("funny_cube.obj", 1e4, 1e-6);
-//}
-//
-//TEST_CASE("fandisk") {
-//    run_test_case("fandisk.obj", 1e4, 1e-6);
-//}
+TEST_CASE("open_cube") {
+    run_test_case("open_cube.obj", 1e4, 1e-6);
+}
+
+TEST_CASE("dragon") {
+    run_test_case("dragon.obj", 1e4, 1e-6);
+}
+
+TEST_CASE("bunny") {
+    run_test_case("bunny.obj", 1e4, 1e-6);
+}
+
+TEST_CASE("funny_cube") {
+    run_test_case("funny_cube.obj", 1e4, 1e-6);
+}
+
+TEST_CASE("fandisk") {
+    run_test_case("fandisk.obj", 1e4, 1e-6);
+}
 
 TEST_CASE("crank_pin") {
     run_test_case("crank_pin.obj", 1e4, 1e-6);

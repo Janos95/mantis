@@ -8,42 +8,50 @@
 #include <thread>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#define MANTIS_USE_NEON
+#define MANTIS_HAS_NEON
 #elif defined(__AVX__)
-#define MANTIS_USE_AVX
-
+#define MANTIS_HAS_AVX
+#ifdef __AVX512F__
 #define MANTIS_HAS_AVX512
-
+#endif
 #else
 #error "Mantis: No SIMD support detected, platform not supported."
 #endif
 
-#ifdef MANTIS_USE_NEON
-
+#ifdef MANTIS_HAS_NEON
 #include <arm_neon.h>
-
 #endif
 
-#ifdef MANTIS_USE_AVX
+#ifdef MANTIS_HAS_AVX
 #include <immintrin.h>
 #endif
 
 //#define DEBUG_MANTIS
 
-#ifdef MANTIS_USE_AVX
+#ifdef MANTIS_HAS_AVX
 using float32x4_t = __m128;
 using int32x4_t = __m128i;
 using mask4_t = __m128i;
 #endif
 
+#ifdef MANTIS_HAS_AVX512
 using float32x16_t = __m512;
 using int32x16_t = __m512i;
 using mask16_t = __mmask16;
+#endif
 
+#ifdef MANTIS_HAS_AVX512
 constexpr size_t SimdWidth = 16;
 using float32xN_t = float32x16_t;
 using int32xN_t = int32x16_t;
 using maskN_t = mask16_t;
+#else
+// For both SSE, AVX and NEON
+constexpr size_t SimdWidth = 4;
+using float32xN_t = float32x4_t;
+using int32xN_t = int32x4_t;
+using maskN_t = mask4_t;
+#endif
 
 namespace mantis {
 
@@ -108,7 +116,7 @@ struct Node {
 
 // ============================= SIMD ===============================
 
-#ifdef MANTIS_USE_NEON
+#ifdef MANTIS_HAS_NEON
 
 // a*b + c
 float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
@@ -169,7 +177,7 @@ int32x4_t dup_int(int32_t x) {
 
 #endif
 
-#ifdef MANTIS_USE_AVX
+#ifdef MANTIS_HAS_AVX
 
 float32x4_t fma(float32x4_t a, float32x4_t b, float32x4_t c) {
     return _mm_add_ps(_mm_mul_ps(a, b), c); // TODO: check for fma
@@ -220,16 +228,9 @@ float32x4_t select_float(mask4_t condition, float32x4_t trueValue, float32x4_t f
     return _mm_blendv_ps(falseValue, trueValue, conditionAsFloat);
 }
 
-//float32x4_t dup_float(float x) {
-//    return _mm_set1_ps(x);
-//}
-//
-//int32x4_t dup_int(int32_t x) {
-//    return _mm_set1_epi32(x);
-//}
+#endif
 
-// ============================= AVX512 ===============================
-
+#ifdef MANTIS_HAS_AVX512
 
 float32x16_t fma(float32x16_t a, float32x16_t b, float32x16_t c) {
     return _mm512_fmadd_ps(a, b, c);
@@ -281,6 +282,7 @@ float32x16_t select_float(mask16_t condition, float32x16_t trueValue, float32x16
 
 template<int N = SimdWidth>
 auto dupf32(float x) {
+
     if constexpr(N == 4) {
         return _mm_set1_ps(x);
     } else if constexpr(N == 16) {
@@ -392,8 +394,6 @@ inline float32x4_t p2bbox(const Node &node, const float32x4_t qx, const float32x
 
 // ============================= BVH ===============================
 
-#define LEAF_SIZE 16
-
 struct LeafNode {
     float32xN_t x_coords = dupf32(FLT_MAX);
     float32xN_t y_coords = dupf32(FLT_MAX);
@@ -421,7 +421,6 @@ struct LeafNode {
 
 
 constexpr static long long NUM_PACKETS = 8;
-
 
 class Bvh {
 public:
@@ -478,7 +477,7 @@ public:
         assert(node_idx == 0 || node_idx < 0);
     }
 
-    int closestPoint(const GEO::vec3 &q) const {
+    std::pair<int, float> closestPoint(const GEO::vec3 &q) const {
         constexpr int MAX_STACK_SIZE = 64;
         struct StackNode {
             int nodeIndex;
@@ -536,7 +535,7 @@ public:
             }
         }
 
-        return bestIdx;
+        return {bestIdx, bestDistSq};
     }
 
 private:
@@ -642,11 +641,10 @@ private:
 template<class F>
 void parallel_for(size_t begin, size_t end, F f) {
     // serial implementation
-    for(size_t i = begin; i < end; ++i) {
-        f(i);
-    }
-
-    return;
+    //for(size_t i = begin; i < end; ++i) {
+    //    f(i);
+    //}
+    //return;
 
     size_t num_threads = std::thread::hardware_concurrency();
 
@@ -1300,13 +1298,13 @@ void Impl::compute_interception_list() {
 }
 
 Result Impl::calc_closest_point(GEO::vec3 q) {
-    int v = bvh.closestPoint(q);
+    auto [v, v_dist2] = bvh.closestPoint(q);
 
     float32xN_t qx = dupf32((float) q.x);
     float32xN_t qy = dupf32((float) q.y);
     float32xN_t qz = dupf32((float) q.z);
 
-    float32xN_t best_d2 = dupf32(float(GEO::distance2(q, points[v])));
+    float32xN_t best_d2 = dupf32(v_dist2);
     int32xN_t best_idx = dupi32(v);
 
     const auto &v_edges = intercepted_edges_packed[v];
