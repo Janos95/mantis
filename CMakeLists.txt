@@ -16,10 +16,11 @@ add_library(mantis
         mantis.cpp
 )
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    #target_compile_options(mantis PRIVATE "-mavx")
+    target_compile_options(mantis PRIVATE "-mavx512f")
+elseif(MSVC)
     target_compile_options(mantis PRIVATE "/arch:AVX")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_compile_options(mantis PRIVATE "-mavx")
 endif()
 
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
