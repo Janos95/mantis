@@ -82,11 +82,20 @@ and using the x coordinate of the vertex normals of the bunny as a boundary cond
 
 These benchmarks compare the performance of mantis with the original P2M implementation and FCPW for three different meshes (which can be found in the assets folder). 
 The test meshes are normalized to be contained in a unit bounding box and the queries are sampled uniformly at random from the bounding box [-5, 5]^3.
-The benchmark was run on a MacBook Pro with an M2 Max. For FCPW the SIMD width was set to 4. On top of every bar
-you can see the slowdown compared to mantis.
+For FCPW the simd width is always set to 4. I experimented with a few different simd widths and 4 seemed to give the best performance.
+
+Here are the results running on AMD Ryzen 9 5950X compiled on MinGW. In these benchmarks mantis takes advantage of
+the AVX512 instruction set. Typically though, AVX512 only provides a 20-50% speedup over SSE4.2.
+On top of every bar you can see the slowdown compared to mantis.
+<div align="center">
+<img src="bench_7950x.png" alt="Performance Comparison with original P2M and FCPW" width="1000">
+</div>
+
+In the second figure you can see the same test cases but compiled with clang on a MacBook Pro with an M2 Max CPU. 
+In these benchmarks mantis takes advantage of the ARM NEON instruction set.
 
 <div align="center">
-<img src="bench.png" alt="Performance Comparison with original P2M and FCPW" width="1000">
+<img src="bench_m2.png" alt="Performance Comparison with original P2M and FCPW" width="1000">
 </div>
 
 ## Caveats
