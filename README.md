@@ -5,10 +5,10 @@
 [![macos, linux, windows](https://github.com/Janos95/mantis/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/Janos95/mantis/actions/workflows/cmake-multi-platform.yml)
 
 Mantis is a C++ library for doing very fast distance-to-mesh queries. 
-It implements the [P2M algorithm](https://yuemos.github.io/Projects/P2M/pdf/P2M_author.pdf) and uses SIMD instructions to significantly accelerate query performance.
+It implements the [P2M algorithm](https://yuemos.github.io/Projects/P2M/pdf/P2M_author.pdf) and uses NEON, SSE or AVX512 instructions to significantly accelerate query performance.
 Here are some of the highlights of Mantis:
 
-- **Blazingly Fast**: Mantis is about 2x faster than the original P2M implementation and ca. 4x faster than FCPW.
+- **Blazingly Fast**: Mantis is multiple times (3-20x) faster than the original P2M implementatino and the popular FCPW library.
 
 - **MIT Licensed**: Mantis is permissively licensed under the MIT license.
 
