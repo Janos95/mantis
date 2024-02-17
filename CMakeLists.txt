@@ -9,8 +9,8 @@ option(MANTIS_BUILD_EXAMPLES "Build the examples" OFF)
 option(MANTIS_BUILD_BENCH "Build the benchmarks" OFF)
 option(MANTIS_BUILD_TESTS "Build the tests" ON)
 
-# this is split out into a separate target to avoid setting compile flags that would
-# affect the correctness of the geograms exact arithmetic.
+# This is split out into a separate target to avoid setting compile flags that would
+# affect the correctness of geogram's exact predicates.
 add_library(delaunay
     Delaunay_psm.cpp
     Delaunay_psm.h
