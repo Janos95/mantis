@@ -9,9 +9,14 @@ option(MANTIS_BUILD_EXAMPLES "Build the examples" OFF)
 option(MANTIS_BUILD_BENCH "Build the benchmarks" OFF)
 option(MANTIS_BUILD_TESTS "Build the tests" ON)
 
+# this is split out into a separate target to avoid setting compile flags that would
+# affect the correctness of the geograms exact arithmetic.
+add_library(delaunay
+    Delaunay_psm.cpp
+    Delaunay_psm.h
+)
+
 add_library(mantis
-        Delaunay_psm.h
-        Delaunay_psm.cpp
         mantis.h
         mantis.cpp
 )
@@ -22,6 +27,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mantis PRIVATE "/arch:AVX512")
 endif()
 
+target_link_libraries(mantis PRIVATE delaunay)
 target_include_directories(mantis PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 if (MANTIS_BUILD_TESTS)
