@@ -28,6 +28,11 @@
 
 //#define DEBUG_MANTIS
 
+#ifdef MANTIS_HAS_NEON
+// float32x4_t and int32x4_t are already defined in arm_neon.h
+using mask4_t = uint32x4_t;
+#endif
+
 #ifdef MANTIS_HAS_AVX
 using float32x4_t = __m128;
 using int32x4_t = __m128i;
