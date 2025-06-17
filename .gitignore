@@ -2,3 +2,4 @@ cmake-build-*/
 bench/fcpw/
 .idea/
 .DS_Store
+build
