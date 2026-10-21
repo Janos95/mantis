@@ -1,3 +1,10 @@
+get_directory_property(HAS_PARENT PARENT_DIRECTORY)
+if(HAS_PARENT)
+  set(MANTIS_TOPLEVEL_PROJECT OFF)
+else()
+  set(MANTIS_TOPLEVEL_PROJECT ON)
+endif()
+
 cmake_minimum_required(VERSION 3.26)
 project(mantis)
 
@@ -7,7 +14,9 @@ include(FetchContent)
 
 option(MANTIS_BUILD_EXAMPLES "Build the examples" OFF)
 option(MANTIS_BUILD_BENCH "Build the benchmarks" OFF)
-option(MANTIS_BUILD_TESTS "Build the tests" ON)
+option(MANTIS_BUILD_TESTS "Build the tests" ${MANTIS_TOPLEVEL_PROJECT})
+
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/recipes/")
 
 # This is split out into a separate target to avoid setting compile flags that would
 # affect the correctness of geogram's exact predicates.
